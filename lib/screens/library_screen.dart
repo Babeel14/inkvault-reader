@@ -44,11 +44,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _importing = true);
     try {
-      final result = await FilePicker.pickFiles(
+      final picked = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['pdf', 'epub', 'cbz', 'cbr'],
       );
-      final path = result?.files.single.path;
+      final path = picked.isEmpty ? null : picked.first.path;
       if (path == null) return;
       final book = await LibraryService.instance.importFromPath(path);
       if (!mounted) return;
