@@ -1,0 +1,35 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies
+*.lock
+!/.github/workflows/*.yml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Android
+android/local.properties
+android/.gradle/
+android/key.properties
+**/android/app/.cxx/
+gradle-wrapper.jar.orig
+captures/
+
+# iOS/macOS (no usados)
+ios/
+macos/
+linux/
+windows/
+web/
+
+# Sistema
+.DS_Store
+Thumbs.db
