@@ -10,8 +10,7 @@ Future<void> exportBookToObsidianFlow(
   List<Annotation> annotations,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
-  final vaultDir = await FilePicker.platform
-      .getDirectoryPath(dialogTitle: 'Elige la carpeta de tu vault de Obsidian');
+  final vaultDir = await FilePicker.getDirectoryPath(dialogTitle: 'Elige la carpeta de tu vault de Obsidian');
   if (vaultDir == null) return;
   try {
     final result = await exportBookToVault(

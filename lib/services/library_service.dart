@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
@@ -105,18 +104,19 @@ class LibraryService {
           final doc = await PdfDocument.openFile(copied.path);
           pageCount = doc.pagesCount;
           final page = await doc.getPage(1);
-          final w = 720;
-          final h = (w * page.height / page.width).round();
+          const w = 720.0;
+          final h = (w * page.height / page.width).roundToDouble();
           final img = await page.render(
             width: w,
             height: h,
             format: PdfPageImageFormat.png,
           );
           await page.close();
-          if (img?.bytes != null) {
+          final renderedBytes = img?.bytes;
+          if (renderedBytes != null) {
             final covers = await _coversDir();
             coverPath = '$covers/$id.png';
-            await File(coverPath).writeAsBytes(img!.bytes, flush: true);
+            await File(coverPath).writeAsBytes(renderedBytes, flush: true);
           }
           await doc.close();
         } catch (_) {}

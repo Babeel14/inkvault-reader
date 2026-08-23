@@ -49,7 +49,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   int _pagesCount = 0;
   double _progress = 0;
 
-  PdfController? _pdfController;
+  PdfControllerPinch? _pdfController;
   PageController? _comicController;
   List<String>? _comicPages;
   String? _comicError;
@@ -84,7 +84,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     switch (book.format) {
       case BookFormat.pdf:
         _page = (book.lastPageNumber ?? 1) - 1;
-        _pdfController = PdfController(
+        _pdfController = PdfControllerPinch(
           document: PdfDocument.openFile(book.filePath),
           initialPage: book.lastPageNumber ?? 1,
         );
@@ -191,7 +191,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (book.format == BookFormat.pdf &&
           _pdfController != null &&
           a.pageIndex + 1 <= (_pdfController!.pagesCount ?? 1)) {
-        _pdfController!.jumpTo(a.pageIndex + 1);
+        _pdfController!.jumpToPage(a.pageIndex + 1);
       } else if (book.format == BookFormat.comic &&
           _comicController != null) {
         _comicController!.jumpToPage(a.pageIndex);
@@ -308,6 +308,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final anchor = _epubAnchorNow() ?? '';
     final png = await _captureNormalizedRect(rectNorm);
+    if (!mounted) return;
 
     final note = await showNoteDialog(
       context,
@@ -538,7 +539,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             pageLabel: pageText,
             onSeek: (v) {
               if (book.format == BookFormat.pdf && _pagesCount > 0) {
-                _pdfController?.jumpTo(
+                _pdfController?.jumpToPage(
                     ((v * _pagesCount).ceil()).clamp(1, _pagesCount).toInt());
               } else if (book.format == BookFormat.comic && _pagesCount > 0) {
                 _comicController?.jumpToPage(

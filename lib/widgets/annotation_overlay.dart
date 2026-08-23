@@ -51,11 +51,16 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
                 GestureRecognizerFactoryWithHandlers<StylusGestureRecognizer>(
               () => StylusGestureRecognizer(debugOwner: this),
               (instance) {
-                instance
-                  ..onStylusDown = (e) => _onDown(e.localPosition)
-                  ..onStylusMove = (e) => _onMove(e.localPosition)
-                  ..onStylusUp = (e) => _onUp(size)
-                  ..onStylusCancel = _onCancel;
+                instance.onStylusDown = (e) {
+                  _onDown(e.localPosition);
+                };
+                instance.onStylusMove = (e) {
+                  _onMove(e.localPosition);
+                };
+                instance.onStylusUp = (e) {
+                  _onUp(size);
+                };
+                instance.onStylusCancel = _onCancel;
               },
             ),
           },

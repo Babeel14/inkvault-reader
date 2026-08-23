@@ -11,7 +11,7 @@ class PdfReaderWidget extends StatelessWidget {
     this.onPageChanged,
   });
 
-  final PdfController controller;
+  final PdfControllerPinch controller;
   final VoidCallback onDocumentReady;
 
   /// Página actual, base 0.

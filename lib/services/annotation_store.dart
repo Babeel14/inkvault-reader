@@ -34,7 +34,7 @@ class AnnotationStore {
   Future<List<Annotation>> load(String bookId) async {
     try {
       final dir = await _annotationsDir();
-      final f = File('${dir.path}/$bookId.json');
+      final f = File('$dir/$bookId.json');
       if (!await f.exists()) return [];
       final raw = await f.readAsString();
       final list = jsonDecode(raw) as List<dynamic>;
@@ -48,7 +48,7 @@ class AnnotationStore {
 
   Future<void> save(String bookId, List<Annotation> annotations) async {
     final dir = await _annotationsDir();
-    final f = File('${dir.path}/$bookId.json');
+    final f = File('$dir/$bookId.json');
     await f.writeAsString(
       jsonEncode(annotations.map((a) => a.toJson()).toList()),
       flush: true,

@@ -14,6 +14,7 @@ class StylusGestureRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   bool isPointerAllowed(PointerEvent event) {
+    if (event is! PointerDownEvent) return false;
     if (event.kind != PointerDeviceKind.stylus) return false;
     return super.isPointerAllowed(event);
   }
