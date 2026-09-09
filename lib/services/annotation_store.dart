@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/models.dart';
 import 'id_gen.dart';
+import 'durable_json.dart';
 
 class AnnotationStore {
   AnnotationStore._();
@@ -32,26 +33,27 @@ class AnnotationStore {
   }
 
   Future<List<Annotation>> load(String bookId) async {
-    try {
-      final dir = await _annotationsDir();
-      final f = File('$dir/$bookId.json');
-      if (!await f.exists()) return [];
-      final raw = await f.readAsString();
-      final list = jsonDecode(raw) as List<dynamic>;
-      return list
-          .map((e) => Annotation.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
+    final dir = await _annotationsDir();
+    final path = '$dir/$bookId.json';
+    await DurableJson.flush(path);
+    Object? failure;
+    for (final candidate in [path, '$path.bak']) {
+      final f = File(candidate);
+      if (!await f.exists()) continue;
+      try {
+        final list = jsonDecode(await f.readAsString()) as List<dynamic>;
+        return list.map((e) => Annotation.fromJson(e as Map<String, dynamic>)).toList();
+      } catch (e) { failure = e; }
     }
+    if (failure != null) throw StateError('No se pudieron leer las anotaciones. Se conservan los archivos para recuperarlas.');
+    return [];
   }
 
   Future<void> save(String bookId, List<Annotation> annotations) async {
     final dir = await _annotationsDir();
     final f = File('$dir/$bookId.json');
-    await f.writeAsString(
+    await DurableJson.write(f.path,
       jsonEncode(annotations.map((a) => a.toJson()).toList()),
-      flush: true,
     );
   }
 

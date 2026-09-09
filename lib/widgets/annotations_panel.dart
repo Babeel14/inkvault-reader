@@ -13,6 +13,7 @@ class AnnotationsPanel extends StatelessWidget {
     required this.onDelete,
     required this.onEditNote,
     required this.onClose,
+    required this.onExport,
   });
 
   final List<Annotation> annotations;
@@ -20,6 +21,7 @@ class AnnotationsPanel extends StatelessWidget {
   final void Function(Annotation annotation) onDelete;
   final void Function(Annotation annotation) onEditNote;
   final VoidCallback onClose;
+  final void Function(Annotation annotation) onExport;
 
   String _label(Annotation a) {
     final kind = a.isCrop ? 'Recorte' : 'Dibujo';
@@ -39,7 +41,7 @@ class AnnotationsPanel extends StatelessWidget {
       child: SafeArea(
         left: false,
         child: Container(
-          width: 360,
+          width: MediaQuery.sizeOf(context).width.clamp(0, 360).toDouble(),
           decoration: const BoxDecoration(
             border: Border(left: BorderSide(color: InkTheme.outline)),
           ),
@@ -190,6 +192,7 @@ class AnnotationsPanel extends StatelessWidget {
               ),
             ),
             _ItemMenu(
+              onExport: () => onExport(a),
               onDelete: () => onDelete(a),
               onEditNote: () => onEditNote(a),
             ),
@@ -201,7 +204,9 @@ class AnnotationsPanel extends StatelessWidget {
 }
 
 class _ItemMenu extends StatelessWidget {
-  const _ItemMenu({required this.onDelete, required this.onEditNote});
+  const _ItemMenu({required this.onDelete, required this.onEditNote, required this.onExport});
+
+  final VoidCallback onExport;
 
   final VoidCallback onDelete;
   final VoidCallback onEditNote;
@@ -212,10 +217,12 @@ class _ItemMenu extends StatelessWidget {
       icon: Icon(Icons.more_vert,
           size: 18, color: Colors.white.withValues(alpha: 0.4)),
       onSelected: (v) {
+        if (v == 'export') onExport();
         if (v == 'note') onEditNote();
         if (v == 'delete') onDelete();
       },
       itemBuilder: (_) => const [
+        PopupMenuItem(value: 'export', child: Text('Enviar a Obsidian')),
         PopupMenuItem(value: 'note', child: Text('Editar nota')),
         PopupMenuItem(value: 'delete', child: Text('Eliminar')),
       ],

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
@@ -23,6 +22,7 @@ import '../widgets/annotations_panel.dart';
 import '../widgets/export_actions.dart';
 import '../widgets/note_dialog.dart';
 import '../widgets/stylus_recognizer.dart';
+import '../widgets/saved_ink.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.book});
@@ -44,6 +44,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
   AnnotationTool _tool = AnnotationTool.pen;
   bool _panelOpen = false;
   bool _docReady = false;
+  bool _annotationsReady = false;
+  bool _saving = false;
+  bool _touchInk = false;
+  bool _inputInitialized = false;
+  String? _documentError;
+  final _overlayKey = GlobalKey<AnnotationOverlayState>();
 
   int _page = 0;
   int _pagesCount = 0;
@@ -62,6 +68,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Book get book => widget.book;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_inputInitialized) {
+      _inputInitialized = true;
+      _touchInk = MediaQuery.sizeOf(context).shortestSide < 600;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _loadAnnotations();
@@ -69,9 +84,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _loadAnnotations() async {
-    final list = await AnnotationStore.instance.load(book.id);
+    List<Annotation> list;
+    try { list = await AnnotationStore.instance.load(book.id); }
+    catch (e) { if (mounted) _showError(e.toString()); return; }
     if (!mounted) return;
     setState(() {
+      _annotationsReady = true;
       _annotations = list
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     });
@@ -120,12 +138,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
       setState(() => _comicError = e.message);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _comicError = 'No se pudo abrir el cómic.');
+      setState(() => _comicError = 'No se pudo abrir el cÃ³mic.');
     }
   }
 
   List<Stroke> strokesForCurrentPage() {
-    if (book.format == BookFormat.epub) return const [];
+    if (book.format == BookFormat.epub) {
+      final anchor = _epubAnchorNow();
+      return _annotations.where((a) => !a.isCrop && a.anchor.isNotEmpty && a.anchor == anchor).expand((a) => a.strokes).toList();
+    }
     return _annotations
         .where((a) => !a.isCrop && a.pageIndex == _page)
         .expand((a) => a.strokes)
@@ -164,6 +185,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _debouncedSavePosition(String position) {
+    book.lastPosition = position;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 600), () {
       LibraryService.instance.savePosition(book, position);
@@ -176,6 +198,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _toggleAnnotating() {
+    if (!_docReady || !_annotationsReady || _saving) return;
     setState(() {
       _annotating = !_annotating;
       _tool = AnnotationTool.pen;
@@ -206,9 +229,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final boundary =
           _captureKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 3.0);
+      final longest = boundary.size.longestSide;
+      final image = await boundary.toImage(pixelRatio: (2400 / longest).clamp(1.0, 3.0));
       final byteData =
-          await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+          await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (byteData == null) return null;
       final rgba = byteData.buffer.asUint8List();
@@ -227,26 +251,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     } catch (_) {
       return null;
     }
-  }
-
-  Future<Uint8List?> _captureStrokesRegion(List<double> pointsNorm) async {
-    if (pointsNorm.isEmpty) return null;
-    var minX = 1.0, minY = 1.0, maxX = 0.0, maxY = 0.0;
-    for (var i = 0; i + 1 < pointsNorm.length; i += 2) {
-      final x = pointsNorm[i];
-      final y = pointsNorm[i + 1];
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-    const pad = 0.02;
-    return _captureNormalizedRect([
-      ((minX - pad).clamp(0.0, 1.0)).toDouble(),
-      ((minY - pad).clamp(0.0, 1.0)).toDouble(),
-      ((maxX + pad).clamp(0.0, 1.0)).toDouble(),
-      ((maxY + pad).clamp(0.0, 1.0)).toDouble(),
-    ]);
   }
 
   Annotation _buildAnnotation({
@@ -270,76 +274,45 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  Future<void> _onPenCommit(List<double> normalizedPoints) async {
-    final anchor = _epubAnchorNow() ?? '';
-    final stroke = Stroke(
-      points: normalizedPoints,
-      width: _penWidth,
-      color: InkTheme.accent.toARGB32(),
-    );
-    final annotation = _buildAnnotation(
-      kind: AnnotationKind.draw,
-      pageIndex: book.format == BookFormat.epub ? -1 : _page,
-      anchor: anchor,
-      strokes: [stroke],
-      rectNorm: const [],
-    );
-
-    final note = await showNoteDialog(context, title: 'Nota del dibujo');
-    if (!mounted) return;
-    annotation.note = note ?? '';
-
-    setState(() {
-      _annotations.insert(0, annotation);
-    });
-    await _persistAnnotations();
-
-    unawaited(() async {
-      final png = await _captureStrokesRegion(normalizedPoints);
-      if (png == null) return;
-      final path = await AnnotationStore.instance.saveCropImage(book.id, png);
-      annotation.imagePath = path;
-      await _persistAnnotations();
-      if (mounted) setState(() {});
-    }());
+  void _showError(String message) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _onCropCommit(List<double> rectNorm) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final anchor = _epubAnchorNow() ?? '';
-    final png = await _captureNormalizedRect(rectNorm);
-    if (!mounted) return;
-
-    final note = await showNoteDialog(
-      context,
-      title: 'Nota del recorte',
-      previewPng: png,
-    );
-    if (!mounted) return;
-
-    final annotation = _buildAnnotation(
-      kind: AnnotationKind.crop,
-      pageIndex: book.format == BookFormat.epub ? -1 : _page,
-      anchor: anchor,
-      strokes: const [],
-      rectNorm: rectNorm,
-    )..note = note ?? '';
-
-    if (png != null) {
-      annotation.imagePath =
-          await AnnotationStore.instance.saveCropImage(book.id, png);
+  Future<void> _saveDraft() async {
+    if (_saving) return;
+    final overlay = _overlayKey.currentState;
+    if (overlay == null) return;
+    final strokes = overlay.drafts;
+    final crop = overlay.crop;
+    if ((_tool == AnnotationTool.crop && crop == null) || (_tool == AnnotationTool.pen && strokes.isEmpty)) {
+      _showError('Dibuja o selecciona una zona antes de guardar.'); return;
     }
-
-    setState(() {
-      _annotations.insert(0, annotation);
-    });
-    await _persistAnnotations();
-    messenger.showSnackBar(
-      SnackBar(content: Text(png != null
-          ? 'Recorte guardado${annotation.note.isNotEmpty ? ' con nota' : ''}'
-          : 'Recorte guardado sin imagen'),
-      ),
-    );
+    setState(() => _saving = true);
+    try {
+      final annotation = _buildAnnotation(
+        kind: _tool == AnnotationTool.crop ? AnnotationKind.crop : AnnotationKind.draw,
+        pageIndex: book.format == BookFormat.epub ? -1 : _page,
+        anchor: _epubAnchorNow() ?? '', strokes: strokes, rectNorm: crop ?? const []);
+      overlay.setCaptureMode(true);
+      await WidgetsBinding.instance.endOfFrame;
+      final png = await _captureNormalizedRect(crop ?? [0, 0, 1, 1]);
+      if (overlay.mounted) overlay.setCaptureMode(false);
+      if (png == null) { _showError('No se pudo capturar la imagen. La selección se conserva; vuelve a intentarlo.'); return; }
+      if (!mounted) return;
+      final note = await showNoteDialog(context, title: 'Guardar anotación', previewPng: png);
+      if (!mounted || note == null) return;
+      annotation.note = note;
+      annotation.imagePath = await AnnotationStore.instance.saveCropImage(book.id, png);
+      final updated = [annotation, ..._annotations];
+      await AnnotationStore.instance.save(book.id, updated);
+      if (!mounted) return;
+      setState(() { _annotations = updated; });
+      overlay.clear();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Anotación guardada'),
+        action: SnackBarAction(label: 'Obsidian', onPressed: () => exportBookToObsidianFlow(context, book, [annotation]))));
+    } catch (e) { _showError('No se pudo guardar: $e'); }
+    finally { if (mounted) setState(() => _saving = false); }
   }
 
   Future<void> _deleteAnnotation(Annotation a) async {
@@ -374,37 +347,30 @@ class _ReaderScreenState extends State<ReaderScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          RepaintBoundary(
-            key: _captureKey,
-            child: ScrollConfiguration(
-              behavior: const ReaderScrollBehavior(),
-              child: _buildReader(),
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _toggleChrome,
+            child: RepaintBoundary(
+              key: _captureKey,
+              child: Stack(fit: StackFit.expand, children: [
+                IgnorePointer(ignoring: _annotating, child: ScrollConfiguration(
+                  behavior: const ReaderScrollBehavior(), child: _buildReader())),
+                SavedInk(strokes: strokesForCurrentPage()),
+                if (_annotating) AnnotationOverlay(
+                  key: _overlayKey, touchEnabled: _touchInk,
+                  tool: _tool, penColor: InkTheme.accent, penWidth: _penWidth,
+                  existingStrokes: const [], onPenCommit: (_) {}, onCropCommit: (_) {}),
+              ]),
             ),
           ),
-          if (!_docReady && book.format != BookFormat.pdf)
+          if (!_docReady && _documentError == null && _comicError == null && book.format != BookFormat.pdf)
             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          Positioned.fill(
-            child: RawGestureDetector(
-              behavior: HitTestBehavior.translucent,
-              gestures: <Type, GestureRecognizerFactory>{
-                TapGestureRecognizer:
-                    GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-                  () => TapGestureRecognizer(debugOwner: this),
-                  (instance) => instance.onTap = _toggleChrome,
-                ),
-              },
-              child: const SizedBox.expand(),
-            ),
-          ),
-          if (_annotating)
-            AnnotationOverlay(
-              tool: _tool,
-              penColor: InkTheme.accent,
-              penWidth: _penWidth,
-              existingStrokes: strokesForCurrentPage(),
-              onPenCommit: _onPenCommit,
-              onCropCommit: _onCropCommit,
-            ),
+          if (_documentError != null)
+            Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.error_outline, size: 40), const SizedBox(height: 12),
+              Text(_documentError!, textAlign: TextAlign.center),
+              TextButton(onPressed: _back, child: const Text('Volver a la biblioteca')),
+            ]))),
           _buildBackdrop(),
           _buildChrome(),
           _buildFabColumn(),
@@ -434,6 +400,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             onDelete: _deleteAnnotation,
             onEditNote: _editNote,
             onClose: _closePanel,
+            onExport: (a) => exportBookToObsidianFlow(context, book, [a]),
           ),
         ),
       ),
@@ -449,7 +416,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           controller: controller,
           onPageChanged: _onPdfPage,
           onDocumentReady: () {
-            if (!_docReady) setState(() => _docReady = true);
+            if (!_docReady) setState(() { _docReady = true; _pagesCount = _pdfController?.pagesCount ?? _pagesCount; if (_pagesCount > 0) _progress = (_page + 1) / _pagesCount; });
           },
         );
       case BookFormat.comic:
@@ -484,9 +451,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
             initialCfi: book.lastCfi,
             onProgressRatio: _onEpubRatio,
             onDocumentReady: () {
-              if (!_docReady) setState(() => _docReady = true);
+              if (!_docReady) setState(() { _docReady = true; _pagesCount = _pdfController?.pagesCount ?? _pagesCount; if (_pagesCount > 0) _progress = (_page + 1) / _pagesCount; });
             },
-            onDocumentError: (_) {},
+            onDocumentError: (message) { if (mounted) setState(() => _documentError = 'No se pudo abrir el EPUB: $message'); },
           ),
         );
     }
@@ -511,12 +478,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _buildChrome() {
     final label = bookFormatLabel(book.format);
     final subtitle =
-        book.author.isEmpty ? label : '$label · ${book.author}';
+        book.author.isEmpty ? label : '$label Â· ${book.author}';
     final pageText = book.format == BookFormat.epub
         ? '${(_progress * 100).toStringAsFixed(0)} %'
         : _pagesCount > 0
             ? '${_page + 1} / $_pagesCount'
-            : '…';
+            : 'â€¦';
     return IgnorePointer(
       ignoring: !_chromeVisible,
       child: Column(
@@ -553,41 +520,24 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Widget _buildFabColumn() {
-    return AnimatedPositioned(
-      right: 18,
-      bottom: _chromeVisible ? 92 : 26,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
-        child: _annotating
-            ? _AnnotateTools(
-                tool: _tool,
-                canUndo: strokesForCurrentPage().isNotEmpty,
-                onSelectTool: (t) => setState(() => _tool = t),
-                onUndo: () async {
-                  for (final a in List<Annotation>.from(_annotations)) {
-                    if (!a.isCrop && a.pageIndex == _page) {
-                      await _deleteAnnotation(a);
-                      break;
-                    }
-                  }
-                },
-                onExit: _toggleAnnotating,
-              )
-            : FloatingActionButton.small(
-                heroTag: 'inkvault-pencil',
-                onPressed: _toggleAnnotating,
-                tooltip: 'Modo anotación',
-                child: const Icon(Icons.draw_outlined),
-              ),
-      ),
-    );
+    return Positioned(right: 12, left: _annotating ? 12 : null, bottom: _chromeVisible ? 92 : 24,
+      child: SafeArea(top: false, child: _annotating ? Material(
+        color: InkTheme.surfaceHigh, borderRadius: BorderRadius.circular(18),
+        child: Padding(padding: const EdgeInsets.all(8), child: Wrap(alignment: WrapAlignment.center, children: [
+          IconButton(tooltip: 'Cancelar selección y salir', onPressed: _saving ? null : () { _overlayKey.currentState?.clear(); _toggleAnnotating(); }, icon: const Icon(Icons.close)),
+          IconButton(tooltip: 'Lápiz', onPressed: _saving ? null : () { _overlayKey.currentState?.clear(); setState(() => _tool = AnnotationTool.pen); }, icon: Icon(Icons.draw, color: _tool == AnnotationTool.pen ? InkTheme.accent : null)),
+          IconButton(tooltip: 'Seleccionar recorte (arrastra de nuevo para ajustar)', onPressed: _saving ? null : () { _overlayKey.currentState?.clear(); setState(() => _tool = AnnotationTool.crop); }, icon: Icon(Icons.crop, color: _tool == AnnotationTool.crop ? InkTheme.accent : null)),
+          IconButton(tooltip: _touchInk ? 'Dibujar con dedo activado' : 'Activar dibujo con dedo', onPressed: _saving ? null : () => setState(() => _touchInk = !_touchInk), icon: Icon(Icons.touch_app, color: _touchInk ? InkTheme.accent : null)),
+          FilledButton.icon(onPressed: _saving ? null : _saveDraft, icon: const Icon(Icons.check), label: Text(_saving ? 'Guardando…' : 'Guardar')),
+        ])),
+      ) : FloatingActionButton.small(heroTag: 'inkvault-pencil', onPressed: _docReady && _annotationsReady ? _toggleAnnotating : null,
+        tooltip: 'Anotar', child: const Icon(Icons.draw_outlined))));
   }
 
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    unawaited(LibraryService.instance.persist());
     _pdfController?.dispose();
     _comicController?.dispose();
     super.dispose();
@@ -771,74 +721,6 @@ class _BottomBar extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _AnnotateTools extends StatelessWidget {
-  const _AnnotateTools({
-    required this.tool,
-    required this.canUndo,
-    required this.onSelectTool,
-    required this.onUndo,
-    required this.onExit,
-  });
-
-  final AnnotationTool tool;
-  final bool canUndo;
-  final void Function(AnnotationTool tool) onSelectTool;
-  final VoidCallback onUndo;
-  final VoidCallback onExit;
-
-  Widget _btn({
-    required IconData icon,
-    required String tooltip,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return FloatingActionButton.small(
-      heroTag: tooltip,
-      onPressed: onTap,
-      backgroundColor: selected ? InkTheme.accent : InkTheme.surfaceHigh,
-      foregroundColor: selected ? const Color(0xFF241A08) : InkTheme.ink,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Icon(icon, size: 20),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _btn(
-          icon: Icons.close,
-          tooltip: 'Salir de anotaciones',
-          selected: false,
-          onTap: onExit,
-        ),
-        const SizedBox(height: 10),
-        _btn(
-          icon: Icons.draw_outlined,
-          tooltip: 'Lápiz',
-          selected: tool == AnnotationTool.pen,
-          onTap: () => onSelectTool(AnnotationTool.pen),
-        ),
-        const SizedBox(height: 10),
-        _btn(
-          icon: Icons.crop_free_rounded,
-          tooltip: 'Recorte',
-          selected: tool == AnnotationTool.crop,
-          onTap: () => onSelectTool(AnnotationTool.crop),
-        ),
-        const SizedBox(height: 10),
-        _btn(
-          icon: Icons.undo,
-          tooltip: 'Deshacer',
-          selected: false,
-          onTap: canUndo ? onUndo : () {},
-        ),
-      ],
     );
   }
 }

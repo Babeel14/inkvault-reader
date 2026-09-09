@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
+import 'package:rar/rar.dart';
 
 class ComicException implements Exception {
   ComicException(this.message);
@@ -59,6 +60,34 @@ Uint8List? archiveEntryBytes(ArchiveFile f) {
 }
 
 class ComicService {
+  Future<bool> _isRar(String path) async {
+    final file = await File(path).open();
+    try {
+      final bytes = await file.read(7);
+      return bytes.length >= 7 && bytes[0] == 0x52 && bytes[1] == 0x61 &&
+        bytes[2] == 0x72 && bytes[3] == 0x21 && bytes[4] == 0x1a && bytes[5] == 0x07;
+    } finally { await file.close(); }
+  }
+  Future<List<String>> _extractRar(String path, String destination) async {
+    final listing = await Rar.listRarContents(rarFilePath: path);
+    if (listing['success'] != true) throw ComicException('No se pudo abrir el CBR: ${listing['message']}');
+    for (final entry in (listing['files'] as List? ?? [])) {
+      final name = entry.toString().replaceAll('\\', '/');
+      if (name.startsWith('/') || name.contains(':') || name.split('/').contains('..')) {
+        throw ComicException('El CBR contiene una ruta no válida.');
+      }
+    }
+    final result = await Rar.extractRarFile(rarFilePath: path, destinationPath: destination);
+    if (result['success'] != true) throw ComicException('No se pudo extraer el CBR. Puede estar dañado o requerir contraseña: ${result['message']}');
+    final paths = <String>[];
+    await for (final entry in Directory(destination).list(recursive: true, followLinks: false)) {
+      if (entry is File && _isImageEntry(entry.path)) paths.add(entry.path);
+    }
+    paths.sort(_naturalCompare);
+    if (paths.isEmpty) throw ComicException('El CBR no contiene imágenes compatibles.');
+    return paths;
+  }
+
   Archive _openArchive(String path) {
     InputFileStream? stream;
     try {
@@ -82,6 +111,7 @@ class ComicService {
   Future<List<String>> extractAll(String archivePath, String destDir) async {
     final dir = Directory(destDir);
     await dir.create(recursive: true);
+    if (await _isRar(archivePath)) return _extractRar(archivePath, destDir);
     final arch = _openArchive(archivePath);
     final files = imageFiles(arch);
     if (files.isEmpty) {
@@ -109,9 +139,10 @@ class ComicService {
   }
 
   Future<Uint8List?> firstImageBytes(String archivePath) async {
+    if (await _isRar(archivePath)) return null;
     final arch = _openArchive(archivePath);
     final files = imageFiles(arch);
-    if (files.isEmpty) return null;
+    if (files.isEmpty) { arch.clear(); return null; }
     final bytes = archiveEntryBytes(files.first);
     arch.clear();
     return bytes;

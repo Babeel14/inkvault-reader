@@ -2,7 +2,8 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -22,6 +23,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.2'
           cache: true
 
       - name: Install dependencies
@@ -30,12 +32,15 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Regression tests
+        run: flutter test
+
       - name: Build APKs (split per ABI)
         run: flutter build apk --release --split-per-abi
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: inkvault-reader-apks
+          name: baker-reader-apks
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error

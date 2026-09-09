@@ -15,7 +15,7 @@ Future<String?> showNoteDialog(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text(title),
-      content: Column(
+      content: SingleChildScrollView(child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (previewPng != null)
@@ -40,6 +40,7 @@ Future<String?> showNoteDialog(
             ),
           ),
         ],
+      ),
       ),
       actions: [
         TextButton(

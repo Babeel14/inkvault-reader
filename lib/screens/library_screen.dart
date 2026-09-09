@@ -8,6 +8,7 @@ import '../services/annotation_store.dart';
 import '../services/library_service.dart';
 import '../theme.dart';
 import 'reader_screen.dart';
+import 'settings_screen.dart';
 import '../widgets/export_actions.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -57,9 +58,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             content: Text('Formato no soportado (usa pdf, epub, cbz o cbr)')));
         return;
       }
-      setState(() {});
+      await _reload();
       messenger.showSnackBar(
-          SnackBar(content: Text('Añadido a la biblioteca · ${book.title}')));
+          SnackBar(content: Text('AÃ±adido a la biblioteca Â· ${book.title}')));
     } catch (_) {
       messenger.showSnackBar(
           const SnackBar(content: Text('No se pudo importar el archivo')));
@@ -133,7 +134,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 final confirmed = await _confirmDelete(book);
                 if (confirmed != true) return;
                 await LibraryService.instance.delete(book);
-                if (mounted) setState(() {});
+                if (mounted) await _reload();
               },
             ),
           ],
@@ -148,7 +149,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Eliminar libro'),
         content: Text(
-            '"${book.title}" se borrará junto con sus anotaciones. Esta acción no se puede deshacer.'),
+            '"${book.title}" se borrarÃ¡ junto con sus anotaciones. Esta acciÃ³n no se puede deshacer.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -178,21 +179,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const Text('InkVault',
-                        style: TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.8,
-                            color: InkTheme.ink)),
+                    const Icon(Icons.bakery_dining, color: InkTheme.accent, size: 30),
                     const SizedBox(width: 10),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        _loading ? '' : '${_books.length} libros',
-                        style: const TextStyle(
-                            color: InkTheme.inkDim, fontSize: 13),
-                      ),
-                    ),
+                    const Expanded(child: Text('Baker Reader',
+                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800))),
+                    IconButton(tooltip: 'Ajustes', icon: const Icon(Icons.settings_outlined),
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen()))),
                   ],
                 ),
               ),
@@ -208,10 +201,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.auto_stories_outlined,
+                      Icon(Icons.bakery_dining,
                           size: 64, color: Colors.white.withValues(alpha: 0.15)),
                       const SizedBox(height: 16),
-                      Text('Tu biblioteca está vacía',
+                      Text('Tu biblioteca estÃ¡ vacÃ­a',
                           style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.55),
                               fontSize: 16)),
@@ -305,9 +298,9 @@ class _BookTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progressLabel = book.lastPageNumber != null && book.pageCount > 0
-        ? 'pág ${book.lastPageNumber}'
+        ? 'pÃ¡g ${book.lastPageNumber}'
         : (book.format == BookFormat.comic && book.pageCount > 0
-            ? '${book.pageCount} págs'
+            ? '${book.pageCount} pÃ¡gs'
             : book.author);
     return InkWell(
       onTap: onTap,
