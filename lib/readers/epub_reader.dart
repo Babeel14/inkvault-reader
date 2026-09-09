@@ -49,6 +49,7 @@ class EpubReaderWidgetState extends State<EpubReaderWidget> {
       );
       setState(() => _controller = controller);
     } catch (e) {
+      if (!mounted) return;
       widget.onDocumentError(e.toString());
     }
   }
@@ -63,9 +64,9 @@ class EpubReaderWidgetState extends State<EpubReaderWidget> {
 
   bool _onScroll(ScrollNotification n) {
     final m = n.metrics;
-    final total = m.extentBefore + m.viewportDimension + m.extentAfter;
+    final total = m.maxScrollExtent;
     if (total <= 0) return false;
-    final ratio = m.extentBefore / total;
+    final ratio = (m.pixels / total).clamp(0.0, 1.0);
     if ((ratio - _lastRatio).abs() > 0.004) {
       _lastRatio = ratio;
       widget.onProgressRatio(ratio);

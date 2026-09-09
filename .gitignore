@@ -6,6 +6,7 @@ pubspec.lock
 .flutter-plugins
 .flutter-plugins-dependencies
 *.lock
+!pubspec.lock
 !/.github/workflows/*.yml
 
 # IDE

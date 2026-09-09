@@ -58,8 +58,7 @@ String attachmentNameFor(Book book, Annotation ann) {
   final ext = dot >= 0 ? path.substring(dot).toLowerCase() : '.png';
   final base = slugify(book.title);
   final pagePart = ann.pageIndex >= 0 ? '_pag${ann.pageIndex + 1}' : '';
-  final shortId = ann.id.length >= 6 ? ann.id.substring(0, 6) : ann.id;
-  return '$base${pagePart}_$shortId$ext';
+  return '$base${pagePart}_${ann.id}$ext';
 }
 
 String _yamlString(String value) =>

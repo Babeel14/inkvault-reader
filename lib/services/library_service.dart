@@ -9,6 +9,7 @@ import '../models/models.dart';
 import 'comic_service.dart';
 import 'epub_meta.dart';
 import 'id_gen.dart';
+import 'durable_json.dart';
 
 class LibraryService {
   LibraryService._();
@@ -65,9 +66,8 @@ class LibraryService {
 
   Future<void> persist() async {
     final f = await _libraryFile();
-    await f.writeAsString(
+    await DurableJson.write(f.path,
       jsonEncode(books.map((b) => b.toJson()).toList()),
-      flush: true,
     );
   }
 

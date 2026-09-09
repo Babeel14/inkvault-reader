@@ -9,7 +9,7 @@ class InkVaultApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'InkVault Reader',
+      title: 'Baker Reader',
       debugShowCheckedModeBanner: false,
       theme: InkTheme.dark(),
       home: const LibraryScreen(),

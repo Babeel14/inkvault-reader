@@ -15,6 +15,7 @@ class StrokeLine {
 class AnnotationOverlay extends StatefulWidget {
   const AnnotationOverlay({
     super.key,
+    this.touchEnabled = false,
     required this.tool,
     required this.penColor,
     required this.penWidth,
@@ -23,6 +24,7 @@ class AnnotationOverlay extends StatefulWidget {
     required this.onCropCommit,
   });
 
+  final bool touchEnabled;
   final AnnotationTool tool;
   final Color penColor;
   final double penWidth;
@@ -31,10 +33,26 @@ class AnnotationOverlay extends StatefulWidget {
   final void Function(List<double> normalizedRect) onCropCommit;
 
   @override
-  State<AnnotationOverlay> createState() => _AnnotationOverlayState();
+  State<AnnotationOverlay> createState() => AnnotationOverlayState();
 }
 
-class _AnnotationOverlayState extends State<AnnotationOverlay> {
+class AnnotationOverlayState extends State<AnnotationOverlay> {
+  bool captureMode = false;
+  void setCaptureMode(bool value) => setState(() => captureMode = value);
+  int? _corner;
+  Offset? _moveStart;
+  Rect? _originalRect;
+  Size _size = Size.zero;
+  final List<Stroke> _drafts = [];
+  List<Stroke> get drafts => List.unmodifiable(_drafts);
+  bool get hasDraft => _drafts.isNotEmpty || _cropRect != null;
+  List<double>? get crop {
+    final r = _cropRect;
+    if (r == null || r.width < 8 || r.height < 8 || _size.isEmpty) return null;
+    return [r.left / _size.width, r.top / _size.height, r.right / _size.width, r.bottom / _size.height];
+  }
+  void clear() => setState(() { _drafts.clear(); _active.clear(); _cropStart = null; _cropRect = null; });
+
   final List<Offset> _active = <Offset>[];
   Offset? _cropStart;
   Rect? _cropRect;
@@ -44,6 +62,7 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
+        _size = size;
         return RawGestureDetector(
           behavior: HitTestBehavior.translucent,
           gestures: <Type, GestureRecognizerFactory>{
@@ -51,6 +70,7 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
                 GestureRecognizerFactoryWithHandlers<StylusGestureRecognizer>(
               () => StylusGestureRecognizer(debugOwner: this),
               (instance) {
+                instance.allowTouch = widget.touchEnabled;
                 instance.onStylusDown = (e) {
                   _onDown(e.localPosition);
                 };
@@ -66,11 +86,11 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
           },
           child: CustomPaint(
             painter: _OverlayPainter(
-              existing: widget.existingStrokes,
+              existing: [...widget.existingStrokes, ..._drafts],
               active: _active.isEmpty
                   ? null
                   : StrokeLine(_active, widget.penColor, widget.penWidth),
-              cropRect: _cropRect,
+              cropRect: captureMode ? null : _cropRect,
               penColor: widget.penColor,
               showExisting: true,
               size: size,
@@ -86,6 +106,22 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
     if (widget.tool == AnnotationTool.pen) {
       _active.add(local);
     } else {
+      final rect = _cropRect;
+      if (rect != null) {
+        final corners = [rect.topLeft, rect.topRight, rect.bottomRight, rect.bottomLeft];
+        for (var i = 0; i < corners.length; i++) {
+          if ((corners[i] - local).distance < 32) {
+            _corner = i;
+            _originalRect = rect;
+            return;
+          }
+        }
+        if (rect.contains(local)) {
+          _moveStart = local;
+          _originalRect = rect;
+          return;
+        }
+      }
       _cropStart = local;
       _cropRect = Rect.fromPoints(local, local);
     }
@@ -95,6 +131,15 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
   void _onMove(Offset local) {
     if (widget.tool == AnnotationTool.pen) {
       _active.add(local);
+    } else if (_corner != null && _originalRect != null) {
+      final r = _originalRect!;
+      final opposite = [r.bottomRight, r.bottomLeft, r.topLeft, r.topRight][_corner!];
+      final clamped = Offset(local.dx.clamp(0.0, _size.width), local.dy.clamp(0.0, _size.height));
+      _cropRect = Rect.fromPoints(opposite, clamped);
+    } else if (_moveStart != null && _originalRect != null) {
+      final r = _originalRect!;
+      final delta = local - _moveStart!;
+      _cropRect = r.shift(Offset(delta.dx.clamp(-r.left, _size.width-r.right), delta.dy.clamp(-r.top, _size.height-r.bottom)));
     } else if (_cropStart != null) {
       _cropRect = Rect.fromPoints(_cropStart!, local);
     }
@@ -102,6 +147,9 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
   }
 
   void _onUp(Size size) {
+    _corner = null;
+    _moveStart = null;
+    _originalRect = null;
     if (widget.tool == AnnotationTool.pen) {
       if (_active.length >= 2 && size.width > 0 && size.height > 0) {
         final norm = <double>[];
@@ -110,7 +158,7 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
             ..add(((p.dx / size.width).clamp(0.0, 1.0)).toDouble())
             ..add(((p.dy / size.height).clamp(0.0, 1.0)).toDouble());
         }
-        widget.onPenCommit(norm);
+        _drafts.add(Stroke(points: norm, width: widget.penWidth, color: widget.penColor.toARGB32()));
       }
       _active.clear();
     } else {
@@ -124,15 +172,17 @@ class _AnnotationOverlayState extends State<AnnotationOverlay> {
         final t = ((rect.top / size.height).clamp(0.0, 1.0)).toDouble();
         final r = ((rect.right / size.width).clamp(0.0, 1.0)).toDouble();
         final b = ((rect.bottom / size.height).clamp(0.0, 1.0)).toDouble();
-        widget.onCropCommit([l, t, r, b]);
+        _cropRect = Rect.fromLTRB(l * size.width, t * size.height, r * size.width, b * size.height);
       }
       _cropStart = null;
-      _cropRect = null;
     }
     setState(() {});
   }
 
   void _onCancel() {
+    _corner = null;
+    _moveStart = null;
+    _originalRect = null;
     _active.clear();
     _cropStart = null;
     _cropRect = null;
