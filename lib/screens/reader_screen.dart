@@ -33,7 +33,7 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> {
+class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver {
   static const double _penWidth = 2.6;
 
   final GlobalKey _captureKey = GlobalKey();
@@ -79,8 +79,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAnnotations();
     _initReader();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _saveDebounce?.cancel();
+      unawaited(LibraryService.instance.persist());
+    }
   }
 
   Future<void> _loadAnnotations() async {
@@ -343,7 +352,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_annotating && !_saving,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && !_saving) { _overlayKey.currentState?.clear(); _toggleAnnotating(); }
+      },
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
@@ -377,7 +391,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _buildPanel(),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildPanel() {
@@ -536,6 +550,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     unawaited(LibraryService.instance.persist());
     _pdfController?.dispose();

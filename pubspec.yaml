@@ -13,6 +13,8 @@ dependencies:
   flutter:
     sdk: flutter
   rar: 0.3.0
+  # flutter_html 3.0.0 calls the selector API removed by html 0.15.7.
+  html: 0.15.6
   pdfx: ^2.11.0
   epub_view: ^3.3.0
   archive: ^3.6.1

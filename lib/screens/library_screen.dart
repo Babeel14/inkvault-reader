@@ -168,7 +168,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final columns = width > 1400 ? 6 : (width > 1000 ? 5 : (width > 700 ? 4 : 3));
+    final columns = width > 1400 ? 6 : (width > 1000 ? 5 : (width > 700 ? 4 : (width > 500 ? 3 : 2)));
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
