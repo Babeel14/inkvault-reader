@@ -422,6 +422,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   Widget _buildReader() {
+    if (_documentError != null) return const SizedBox.expand();
     switch (book.format) {
       case BookFormat.pdf:
         final controller = _pdfController;
